@@ -18,7 +18,14 @@
 package com.example.android.devbyteviewer
 
 import android.app.Application
+import android.os.Build
+import androidx.work.*
+import com.example.android.devbyteviewer.work.RefreshDataWorker
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import timber.log.Timber
+import java.util.concurrent.TimeUnit
 
 /**
  * Override application to setup background work via WorkManager
@@ -34,5 +41,51 @@ class DevByteApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         Timber.plant(Timber.DebugTree())
+
+        /*Kick off the work manager*/
+        delayedInit()
     }
+
+
+    val applicationScope = CoroutineScope(Dispatchers.Default)
+
+    private fun delayedInit() {
+        applicationScope.launch {
+            setupRecurringWork()
+        }
+    }
+
+    private fun setupRecurringWork() {
+
+        /*Constraint*/
+        val constraints = Constraints.Builder()
+                //The work should perform on this constraint
+                .setRequiredNetworkType(NetworkType.UNMETERED)
+                .setRequiresBatteryNotLow(true)
+                .setRequiresCharging(true)
+                .apply {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        //Specify whether device should be idle for WorkRequest to run. Default is false.
+                        setRequiresDeviceIdle(true)
+                    }
+                }.build()
+
+        /*Type of work*/
+        val repeatingRequest = PeriodicWorkRequestBuilder<RefreshDataWorker>(1, TimeUnit.DAYS)
+                .setConstraints(constraints)
+                .build()
+
+        /*start*/
+        WorkManager.getInstance().enqueueUniquePeriodicWork(
+                RefreshDataWorker.WORK_NAME, //Unique name for the work
+                //An enum that determines what to do with existing PeriodicWorkRequests with
+                // the same unique name in case of a collision.
+                //In our, case, we keep the old work and discard the new
+                ExistingPeriodicWorkPolicy.KEEP,
+                repeatingRequest)
+    }
+
+
+
+
 }
